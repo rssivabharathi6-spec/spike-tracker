@@ -385,6 +385,25 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
+// Like apiFetch, but for multipart/form-data submissions (file uploads).
+// The browser sets its own Content-Type (with the multipart boundary), so
+// unlike apiFetch this must NOT set Content-Type manually.
+async function apiFetchForm(path, formData) {
+  const res = await fetch(API_BASE + path, {
+    method: "POST",
+    headers: {
+      ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
+    },
+    body: formData,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  if (!res.ok) {
+    throw new Error((data && data.error) || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
 // Loads the feed and every section this user can see. Called right after
 // login (and again after every submit) so the UI always reflects the
 // server's copy of the data.
@@ -468,15 +487,21 @@ async function submitEntry(payload) {
   }
 }
 
-async function submitSectionEntry(sectionId, values) {
+// `payload` is either a plain values object (JSON path) or a FormData
+// instance (multipart path, used when the section has a file field).
+async function submitSectionEntry(sectionId, payload) {
   const errEl = document.getElementById("sectionErr");
   const btn = document.querySelector("#sectionForm button");
   try {
     if (btn) { btn.disabled = true; btn.textContent = "Submitting..."; }
-    await apiFetch(`/sections/${sectionId}/entries`, {
-      method: "POST",
-      body: JSON.stringify({ values }),
-    });
+    if (payload instanceof FormData) {
+      await apiFetchForm(`/sections/${sectionId}/entries`, payload);
+    } else {
+      await apiFetch(`/sections/${sectionId}/entries`, {
+        method: "POST",
+        body: JSON.stringify({ values: payload }),
+      });
+    }
     await loadAllData();
     render();
   } catch (err) {
@@ -676,6 +701,9 @@ function sectionFieldInputHtml(field, idPrefix) {
   if (field.type === "number") {
     return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="number" min="0" ${req}>`;
   }
+  if (field.type === "file") {
+    return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="file" accept="image/*,.pdf" ${req}>`;
+  }
   // default: text
   return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="text" ${req} ${placeholder}>`;
 }
@@ -699,8 +727,18 @@ function sectionEntryCardHtml(entry, section) {
   const d = deptMeta(entry.department);
   const time = new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const rows = section.fields
-    .filter(f => entry.values[f.key] !== undefined && entry.values[f.key] !== "" && entry.values[f.key] !== null)
-    .map(f => `<span style="margin-right:14px;"><span style="color:var(--amber);">${escapeHtml(f.label).toUpperCase()}</span> <span style="color:var(--dim);">${escapeHtml(entry.values[f.key])}</span></span>`)
+    .filter(f => {
+      const v = entry.values[f.key];
+      if (f.type === "file") return v && v.url;
+      return v !== undefined && v !== "" && v !== null;
+    })
+    .map(f => {
+      if (f.type === "file") {
+        const v = entry.values[f.key];
+        return `<span style="margin-right:14px;"><span style="color:var(--amber);">${escapeHtml(f.label).toUpperCase()}</span> <a href="${escapeHtml(v.url)}" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:underline;">📎 ${escapeHtml(v.originalName || "file")}</a></span>`;
+      }
+      return `<span style="margin-right:14px;"><span style="color:var(--amber);">${escapeHtml(f.label).toUpperCase()}</span> <span style="color:var(--dim);">${escapeHtml(entry.values[f.key])}</span></span>`;
+    })
     .join("");
   return `
     <div class="entry">
@@ -856,21 +894,49 @@ function wireMainEvents() {
       const section = sectionMeta(sectionId);
       if (!section) return;
 
-      const values = {};
+      const hasFileField = section.fields.some(f => f.type === "file");
       let missingRequired = false;
-      section.fields.forEach(f => {
-        const el = document.getElementById(`sec_${f.key}`);
-        const val = el ? el.value.trim() : "";
-        if (f.required && !val) missingRequired = true;
-        values[f.key] = val;
-      });
 
-      if (missingRequired) {
-        errEl.textContent = "Please fill in all required fields.";
-        return;
+      if (hasFileField) {
+        // Multipart submission: the file itself goes in under its field key,
+        // everything else travels as a JSON string in "valuesJson" (see
+        // POST /api/sections/:id/entries).
+        const formData = new FormData();
+        const otherValues = {};
+        section.fields.forEach(f => {
+          const el = document.getElementById(`sec_${f.key}`);
+          if (f.type === "file") {
+            const file = el && el.files && el.files[0];
+            if (file) formData.append(f.key, file);
+            if (f.required && !file) missingRequired = true;
+          } else {
+            const val = el ? el.value.trim() : "";
+            if (f.required && !val) missingRequired = true;
+            otherValues[f.key] = val;
+          }
+        });
+        if (missingRequired) {
+          errEl.textContent = "Please fill in all required fields.";
+          return;
+        }
+        formData.append("valuesJson", JSON.stringify(otherValues));
+        submitSectionEntry(sectionId, formData);
+      } else {
+        const values = {};
+        section.fields.forEach(f => {
+          const el = document.getElementById(`sec_${f.key}`);
+          const val = el ? el.value.trim() : "";
+          if (f.required && !val) missingRequired = true;
+          values[f.key] = val;
+        });
+
+        if (missingRequired) {
+          errEl.textContent = "Please fill in all required fields.";
+          return;
+        }
+
+        submitSectionEntry(sectionId, values);
       }
-
-      submitSectionEntry(sectionId, values);
     };
   }
 }

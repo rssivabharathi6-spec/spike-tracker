@@ -311,6 +311,27 @@ const SECTIONS = [
       { key: "remarks", label: "Remarks", type: "textarea" },
     ],
   },
+  {
+    id: "TNA_SCHEDULE",
+    title: "T&A Schedule",
+    depts: ["MERCHANDISE", "MD"],
+    fillDepts: ["MERCHANDISE"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "buyerName", label: "Buyer Name", type: "text" },
+      { key: "orderConfirmationDate", label: "Order Confirmation Date", type: "date" },
+      { key: "fabricBookingDate", label: "Fabric Booking Date", type: "date" },
+      { key: "sampleApprovalDate", label: "Sample Approval Date", type: "date" },
+      { key: "ppMeetingDate", label: "PP Meeting Date", type: "date" },
+      { key: "cuttingStartDate", label: "Cutting Start Date", type: "date" },
+      { key: "sewingStartDate", label: "Sewing Start Date", type: "date" },
+      { key: "exFactoryDate", label: "Ex-Factory Date", type: "date" },
+      { key: "shipmentDate", label: "Shipment Date", type: "date" },
+      { key: "status", label: "Status", type: "select", options: ["On Track", "Delayed", "Completed", "At Risk"] },
+      { key: "attachment", label: "T&A Schedule File (image or PDF)", type: "file" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
 ];
 
 function sectionMeta(id) {

@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spike Creations — Floor Activity Tracker</title>
+<style>
+  :root{
+    --bg:#1C1B19; --panel:#25231F; --panel2:#2E2B26; --cream:#F2EDE4;
+    --amber:#D98E3F; --brick:#B24A3D; --green:#5C8A5C; --border:#3A362F; --dim:#A69C8C;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--cream);font-family:Arial,Helvetica,sans-serif;}
+  .wrap{max-width:640px;margin:0 auto;padding:16px;}
+  h1{font-size:28px;letter-spacing:2px;margin:0;}
+  .tag{color:var(--amber);font-size:12px;letter-spacing:2px;text-transform:uppercase;}
+  input,select,textarea,button{font-family:inherit;font-size:15px;}
+  input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--cream);border-radius:4px;padding:10px;margin-top:4px;}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-top:12px;}
+  button{cursor:pointer;border:none;border-radius:4px;padding:12px;font-weight:bold;}
+  .btn-primary{background:var(--amber);color:var(--bg);width:100%;margin-top:16px;text-transform:uppercase;}
+  .btn-secondary{background:transparent;border:1px solid var(--border);color:var(--dim);padding:8px 10px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:20px;margin-top:20px;}
+  .err{color:var(--brick);margin-top:10px;font-size:13px;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap;}
+  .tab{padding:10px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-size:13px;}
+  .tab.active{color:var(--amber);border-color:var(--amber);}
+  .entry{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--amber);border-radius:3px;padding:12px;margin-bottom:8px;}
+  .entry .meta{font-size:12px;color:var(--dim);margin-top:8px;}
+  .entry .remarks{margin-top:8px;font-size:12px;color:var(--dim);font-style:italic;border-top:1px dashed var(--border);padding-top:6px;}
+  .chip{display:inline-block;border:1px solid var(--amber);color:var(--amber);border-radius:12px;padding:4px 10px;font-size:11px;margin:2px;cursor:pointer;}
+  .chip.active{background:var(--amber);color:var(--bg);}
+  .code{font-family:monospace;font-weight:bold;border:1px solid;border-radius:3px;padding:2px 6px;margin-right:6px;font-size:11px;color:var(--amber);border-color:var(--amber);}
+  .center{text-align:center;padding:40px 20px;color:var(--dim);}
+  .summary-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;}
+  .summary-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:12px;text-align:center;}
+  .summary-card .big{font-size:22px;}
+  .summary-card .small{font-size:9.5px;color:var(--dim);margin-top:4px;}
+  .dept-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-bottom:6px;}
+  .ticker{background:var(--panel);border-bottom:1px solid var(--border);overflow:hidden;white-space:nowrap;padding:8px 0;font-family:monospace;font-size:12px;color:var(--dim);}
+  .footer-note{margin-top:16px;font-size:11px;color:var(--dim);text-align:center;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+/* ==========================================================
+   SPIKE CREATIONS — Factory Floor Tracker (pure HTML/JS demo)
+   ----------------------------------------------------------
+   No server, no backend, no build tools. Just open this file
+   in a browser.
+
+   LIMITATIONS (by design, since there's no backend):
+   - All data lives only in this browser tab's memory.
+   - Refreshing the page resets everything back to the seed data.
+   - "Login" just checks against a hardcoded list below — there is
+     no real security here, it's a UI demo only.
+   - Multiple people can't share data with this version; each
+     person who opens the file gets their own private, temporary copy.
+========================================================== */
+
+const DEPARTMENTS = [
+  { id: "PRODUCTION",    code: "PRD", label: "Production" },
+  { id: "CUTTING",       code: "CUT", label: "Cutting" },
+  { id: "QUALITY",       code: "QC",  label: "Quality" },
+  { id: "PLANNING",      code: "PLN", label: "Planning" },
+  { id: "MERCHANDISE",   code: "MER", label: "Merchandise" },
+  { id: "HR",            code: "HR",  label: "HR" },
+  { id: "ACCOUNTS",      code: "ACC", label: "Accounts" },
+  { id: "ADMIN",         code: "ADM", label: "Admin" },
+  { id: "DOCUMENTATION", code: "DOC", label: "Documentation" },
+  { id: "FABRIC",        code: "FAB", label: "Fabric" },
+  { id: "IRONING",       code: "IRN", label: "Ironing" },
+  { id: "PACKAGING",     code: "PKG", label: "Packaging" },
+  { id: "STORE",         code: "STR", label: "Store" },
+  { id: "FEEDING",       code: "FED", label: "Feeding" },
+  { id: "SAMPLING",      code: "SMP", label: "Sampling" },
+  { id: "ERP",           code: "ERP", label: "ERP Data Entry" },
+];
+
+// The user/password list used to live here in plain text for the in-browser
+// demo. Real accounts and password hashes now live on the server (see the
+// backend's src/data.js) — this page only ever talks to /api/auth/login.
+
+// Departments that no longer have their own generic daily-work log — their
+// day-to-day tracking has moved entirely into the named cross-department
+// Sections below (Buyer Communication & Costing, Manpower Planning, etc.)
+const NO_GENERIC_LOG_DEPTS = ["MERCHANDISE", "HR", "ACCOUNTS", "DOCUMENTATION"];
+
+// Departments that log "Time taken" in a mixed mins/hrs/days unit, instead
+// of minutes only.
+const TIME_UNIT_DEPTS = ["PRODUCTION", "CUTTING", "QUALITY"];
+
+// Executive-level accounts that are not one of the 16 floor departments,
+// but still need a readable label wherever a department name is shown.
+const EXEC_DEPARTMENTS = [
+  { id: "MD", code: "MD", label: "Managing Director" },
+];
+
+const LINES = ["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"];
+const UNITS = ["pcs", "mtr", "kg", "sets", "invoice", "style", "shipment", "workers", "lines", "bundles"];
+const LOGO_DATA_URI = "data:image/jpeg;base64,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";
+
+
+let entryIdSeq = 1;
+function nextId() { return entryIdSeq++; }
+
+function seedEntries() {
+  const now = Date.now();
+  const rows = [
+    { department: "CUTTING", task: "Fabric layer cutting — Style SC-204 Denim Jacket", quantity: 320, unit: "pcs", timeTakenMinutes: 180, line: "Line 1", worker: "S. Devi", remarks: "2 rolls short, requested from store", styleNumber: "SC-204" },
+    { department: "PRODUCTION", task: "Stitching — Sleeve attach, Style SC-204", quantity: 450, unit: "pcs", timeTakenMinutes: 240, line: "Line 2", worker: "R. Kumar", remarks: "On target for EOD", styleNumber: "SC-204" },
+    { department: "QUALITY", task: "AQL inspection — Style SC-198 Shirts", quantity: 600, unit: "pcs", timeTakenMinutes: 150, line: "Line 3", worker: "M. Iqbal", remarks: "12 pcs rejected, rework sent back", styleNumber: "SC-198" },
+    { department: "IRONING", task: "Steam press — Style SC-198", quantity: 580, unit: "pcs", timeTakenMinutes: 200, line: "Line 3", worker: "L. Bora", remarks: "", styleNumber: "SC-198" },
+    { department: "PACKAGING", task: "Poly bagging + cartoning — Style SC-190", quantity: 1000, unit: "pcs", timeTakenMinutes: 210, line: "Line 4", worker: "N. Yadav", remarks: "Ready for dispatch tomorrow", styleNumber: "SC-190" },
+    { department: "FABRIC", task: "Fabric inspection — Denim Lot #88", quantity: 1200, unit: "mtr", timeTakenMinutes: 90, line: "-", worker: "J. Menon", remarks: "2% defect rate, within tolerance", styleNumber: "" },
+    { department: "STORE", task: "Trims issued to Line 1 & 2", quantity: 5000, unit: "pcs", timeTakenMinutes: 60, line: "-", worker: "D. Ghosh", remarks: "Buttons + zippers for SC-204", styleNumber: "SC-204" },
+    { department: "PLANNING", task: "Line plan updated — next 3 days", quantity: 3, unit: "lines", timeTakenMinutes: 45, line: "-", worker: "A. Nair", remarks: "SC-204 prioritized for shipment", styleNumber: "" },
+    { department: "MERCHANDISE", task: "Buyer sample approval follow-up — SC-210", quantity: 1, unit: "style", timeTakenMinutes: 30, line: "-", worker: "P. Shah", remarks: "Awaiting buyer comments", styleNumber: "SC-210" },
+    { department: "SAMPLING", task: "Proto sample stitched — Style SC-215", quantity: 2, unit: "pcs", timeTakenMinutes: 300, line: "-", worker: "E. Pillai", remarks: "For buyer review Friday", styleNumber: "SC-215" },
+  ];
+  return rows.map((r, i) => ({
+    id: nextId(),
+    ...r,
+    createdBy: "seed",
+    createdAt: now - i * 1000 * 60 * 17,
+  }));
+}
+
+// -------------------- Cross-department Sections --------------------
+// Beyond each department's own daily work log, these are shared workflow
+// "sections" that specific departments (and MD) can both fill in and view.
+// Planning has been given access to every section regardless of the list
+// below (see accessibleSections()).
+
+const ALL_FLOOR_DEPT_IDS = DEPARTMENTS.map(d => d.id);
+const STATUS_OPTIONS = ["Pending", "In Progress", "Completed", "On Hold", "Cancelled"];
+
+const SECTIONS = [
+  {
+    id: "BUYER_COMM_COSTING",
+    title: "Buyer Communication & Costing",
+    depts: ["MERCHANDISE", "MD"],
+    fillDepts: ["MERCHANDISE"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "buyerName", label: "Buyer Name", type: "text", required: true },
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text" },
+      { key: "subject", label: "Subject", type: "text", required: true, placeholder: "e.g. Costing sheet sent for Fall 26 collection" },
+      { key: "costingStatus", label: "Costing Status", type: "select", options: ["Draft", "Sent to Buyer", "Under Negotiation", "Approved", "Rejected"] },
+      { key: "followUpDate", label: "Follow-up Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "SAMPLE_DEV",
+    title: "Sample Development Process",
+    depts: ["SAMPLING", "MERCHANDISE", "QUALITY", "MD"],
+    fillDepts: ["SAMPLING"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleSampleRef", label: "Style / Sample Ref", type: "text", required: true },
+      { key: "buyerName", label: "Buyer", type: "text" },
+      { key: "sampleType", label: "Sample Type", type: "select", options: ["Proto Sample", "Fit Sample", "PP Sample", "Size Set", "Salesman Sample", "Photoshoot Sample"] },
+      { key: "sampleStage", label: "Sample Stage", type: "select", options: ["In Development", "Sent to Buyer", "Approved", "Rejected", "Revision Requested"] },
+      { key: "fabricStatus", label: "Fabric Status", type: "select", options: ["Pending", "Sourced", "In-house"] },
+      { key: "trimStatus", label: "Trim Status", type: "select", options: ["Pending", "Sourced", "In-house"] },
+      { key: "submissionDate", label: "Submission Date", type: "date" },
+      { key: "buyerComments", label: "Buyer Comments", type: "textarea" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "MATERIAL_SOURCING",
+    title: "Material Sourcing",
+    depts: ["FABRIC", "MERCHANDISE", "QUALITY", "SAMPLING", "MD"],
+    fillDepts: ["FABRIC"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "materialName", label: "Material / Fabric Name", type: "text", required: true },
+      { key: "supplier", label: "Supplier", type: "text" },
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text" },
+      { key: "sourcingStatus", label: "Sourcing Status", type: "select", options: ["Requested", "Ordered", "In Transit", "Received", "Delayed"] },
+      { key: "expectedDate", label: "Expected Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "QUALITY_LAB_APPROVALS",
+    title: "Quality & Lab Approvals",
+    depts: ["MERCHANDISE", "SAMPLING", "PRODUCTION", "QUALITY", "FABRIC", "CUTTING", "MD"],
+    fillDepts: ["QUALITY"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "testType", label: "Test / Inspection Type", type: "text", placeholder: "e.g. AZO test, Colorfastness" },
+      { key: "labName", label: "Lab Name (if external)", type: "text" },
+      { key: "approvalStatus", label: "Approval Status", type: "select", options: ["Submitted", "Pending", "Approved", "Rejected", "Retest Required"] },
+      { key: "testDate", label: "Test Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "PRODUCTION_TIMELINE",
+    title: "Production & Timeline Management",
+    depts: ["MERCHANDISE", "PRODUCTION", "PLANNING", "QUALITY", "PACKAGING", "HR", "DOCUMENTATION", "ACCOUNTS", "MD"],
+    fillDepts: ["PRODUCTION"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "line", label: "Line", type: "select", options: ["-", ...LINES] },
+      { key: "plannedStartDate", label: "Planned Start Date", type: "date" },
+      { key: "plannedEndDate", label: "Planned End Date", type: "date" },
+      { key: "currentStatus", label: "Current Status", type: "select", options: ["On Track", "Delayed", "Completed", "At Risk"] },
+      { key: "delayReason", label: "Delay Reason (if any)", type: "text" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "SHIPPING_DOCS",
+    title: "Shipping & Documentation",
+    depts: ["MERCHANDISE", "ADMIN", "DOCUMENTATION", "QUALITY", "PLANNING", "MD"],
+    fillDepts: ["DOCUMENTATION"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "shipmentRef", label: "Shipment / Invoice No.", type: "text" },
+      { key: "shippingMode", label: "Shipping Mode", type: "select", options: ["Sea", "Air", "Road", "Courier"] },
+      { key: "etd", label: "ETD", type: "date" },
+      { key: "eta", label: "ETA", type: "date" },
+      { key: "docStatus", label: "Document Status", type: "select", options: ["Pending", "Prepared", "Submitted to Buyer", "Cleared"] },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "MANPOWER_PLANNING",
+    title: "Manpower Planning & Recruitment",
+    depts: [...ALL_FLOOR_DEPT_IDS, "MD"],
+    fillDepts: ["HR"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "positionTitle", label: "Position / Role", type: "text", required: true },
+      { key: "departmentNeeded", label: "Department Needed", type: "select", options: DEPARTMENTS.map(d => d.label) },
+      { key: "headcount", label: "Headcount", type: "number" },
+      { key: "recruitmentStatus", label: "Recruitment Status", type: "select", options: ["Open", "Interviewing", "Offer Extended", "Hired", "Closed"] },
+      { key: "targetDate", label: "Target Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "ACCOUNTS_PAYABLE",
+    title: "Accounts Payable",
+    depts: ["ACCOUNTS", "HR", "ADMIN", "PLANNING", "MD"],
+    fillDepts: ["ACCOUNTS"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "vendorName", label: "Vendor / Supplier Name", type: "text", required: true },
+      { key: "invoiceRef", label: "Invoice / Bill No.", type: "text" },
+      { key: "amount", label: "Amount", type: "number" },
+      { key: "dueDate", label: "Due Date", type: "date" },
+      { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Pending", "Approved", "Paid", "Overdue"] },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "ACCOUNTS_RECEIVABLE",
+    title: "Accounts Receivable",
+    depts: ["ACCOUNTS", "HR", "ADMIN", "PLANNING", "MD"],
+    fillDepts: ["ACCOUNTS"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "buyerName", label: "Buyer / Customer Name", type: "text", required: true },
+      { key: "invoiceRef", label: "Invoice No.", type: "text" },
+      { key: "amount", label: "Amount", type: "number" },
+      { key: "dueDate", label: "Due Date", type: "date" },
+      { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Pending", "Partially Received", "Received", "Overdue"] },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "FINANCIAL_REPORTING",
+    title: "Financial Reporting",
+    depts: ["ACCOUNTS", "HR", "ADMIN", "PLANNING", "MD"],
+    fillDepts: ["ACCOUNTS"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "reportTitle", label: "Report Title", type: "text", required: true },
+      { key: "reportPeriod", label: "Period", type: "text", placeholder: "e.g. June 2026" },
+      { key: "reportType", label: "Report Type", type: "select", options: ["P&L", "Cash Flow", "Balance Sheet", "Cost Analysis", "Other"] },
+      { key: "preparedDate", label: "Prepared Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "EXPORT_SHIPPING_DOCS",
+    title: "Export & Shipping Documentation",
+    depts: ["DOCUMENTATION", "ADMIN", "MERCHANDISE", "PLANNING", "QUALITY", "MD"],
+    fillDepts: ["DOCUMENTATION"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "documentType", label: "Document Type", type: "select", options: ["Commercial Invoice", "Packing List", "Certificate of Origin", "Bill of Lading", "GSP Certificate", "Other"] },
+      { key: "buyerName", label: "Buyer", type: "text" },
+      { key: "status", label: "Status", type: "select", options: ["Pending", "Prepared", "Submitted", "Approved"] },
+      { key: "submissionDate", label: "Submission Date", type: "date" },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+  {
+    id: "PLANNING_SCHEDULE",
+    title: "Planning Schedule",
+    depts: ["PLANNING", "MD"],
+    fillDepts: ["PLANNING"], // only these departments (plus Planning, always) can submit new entries here
+    fields: [
+      { key: "styleOrderRef", label: "Style / Order Ref", type: "text", required: true },
+      { key: "line", label: "Line", type: "select", options: ["-", ...LINES] },
+      { key: "scheduledStartDate", label: "Scheduled Start Date", type: "date" },
+      { key: "scheduledEndDate", label: "Scheduled End Date", type: "date" },
+      { key: "priority", label: "Priority", type: "select", options: ["High", "Medium", "Low"] },
+      { key: "remarks", label: "Remarks", type: "textarea" },
+    ],
+  },
+];
+
+function sectionMeta(id) {
+  return SECTIONS.find(s => s.id === id);
+}
+
+// Planning has explicit access to every section, regardless of that
+// section's own department list — this is deliberate, per how the
+// department's role was defined.
+function accessibleSections(user) {
+  if (user.department === "PLANNING") return SECTIONS;
+  return SECTIONS.filter(s => s.depts.includes(user.department));
+}
+
+// Planning can submit to every section regardless of fillDepts (see the
+// "Planning gets all sections" rule above). Everyone else can only submit
+// if their department is explicitly listed in that section's fillDepts —
+// otherwise they can see the section's entries but not add new ones.
+function canFillSection(user, section) {
+  return user.department === "PLANNING" || section.fillDepts.includes(user.department);
+}
+
+let sectionEntryIdSeq = 1;
+function nextSectionEntryId() { return sectionEntryIdSeq++; }
+
+function seedSectionEntries() {
+  const now = Date.now();
+  const rows = [
+    { sectionId: "BUYER_COMM_COSTING", department: "MERCHANDISE", createdBy: "seed",
+      values: { buyerName: "H&M", styleOrderRef: "SC-210", subject: "Costing sheet sent for Fall 26 order", costingStatus: "Sent to Buyer", followUpDate: "2026-07-10", remarks: "Awaiting buyer confirmation" } },
+    { sectionId: "SAMPLE_DEV", department: "SAMPLING", createdBy: "seed",
+      values: { styleSampleRef: "SC-215", buyerName: "Zara", sampleType: "PP Sample", sampleStage: "Sent to Buyer", fabricStatus: "In-house", trimStatus: "Sourced", submissionDate: "2026-07-05", buyerComments: "", remarks: "For buyer review Friday" } },
+    { sectionId: "MATERIAL_SOURCING", department: "FABRIC", createdBy: "seed",
+      values: { materialName: "Denim Lot #88", supplier: "Arvind Mills", styleOrderRef: "SC-204", sourcingStatus: "Received", expectedDate: "2026-07-01", remarks: "2% defect rate, within tolerance" } },
+    { sectionId: "MANPOWER_PLANNING", department: "HR", createdBy: "seed",
+      values: { positionTitle: "Senior Machine Operator", departmentNeeded: "Production", headcount: 3, recruitmentStatus: "Interviewing", targetDate: "2026-07-20", remarks: "Line 2 expansion" } },
+    { sectionId: "ACCOUNTS_PAYABLE", department: "ACCOUNTS", createdBy: "seed",
+      values: { vendorName: "Arvind Mills", invoiceRef: "INV-8842", amount: 420000, dueDate: "2026-07-15", paymentStatus: "Approved", remarks: "Fabric supplier payment" } },
+  ];
+  return rows.map((r, i) => ({
+    id: nextSectionEntryId(),
+    ...r,
+    createdAt: now - i * 1000 * 60 * 23,
+  }));
+}
+
+// -------------------- App state --------------------
+const API_BASE = "/api"; // backend is served from the same origin as this page
+let session = null;         // { username, fullName, department, isAdmin }
+let authToken = null;
+let entries = [];
+let sectionEntries = [];
+let filterDept = "all";
+let view = "feed";
+let activeSectionId = null; // set on login / when Sections tab is opened
+let loading = false;
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  if (!res.ok) {
+    throw new Error((data && data.error) || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+// Loads the feed and every section this user can see. Called right after
+// login (and again after every submit) so the UI always reflects the
+// server's copy of the data.
+async function loadAllData() {
+  const entriesRes = await apiFetch("/entries");
+  entries = entriesRes.entries;
+
+  const mySections = accessibleSections(session);
+  const sectionResults = await Promise.all(
+    mySections.map(s =>
+      apiFetch(`/sections/${s.id}/entries`).then(r => r.entries.map(e => ({ ...e, sectionId: s.id })))
+    )
+  );
+  sectionEntries = sectionResults.flat();
+}
+
+
+function deptMeta(id) {
+  return DEPARTMENTS.find(d => d.id === id) || EXEC_DEPARTMENTS.find(d => d.id === id) || { code: id, label: id };
+}
+function escapeHtml(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function todayStartMs() {
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  return d.getTime();
+}
+
+// -------------------- Actions --------------------
+async function doLogin(username, password) {
+  const errEl = document.getElementById("loginErr");
+  errEl.textContent = "";
+  const btn = document.querySelector("#loginForm button");
+  if (btn) { btn.disabled = true; btn.textContent = "Signing in..."; }
+  try {
+    const res = await apiFetch("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    authToken = res.token;
+    session = res.user;
+    localStorage.setItem("spike_token", authToken);
+    localStorage.setItem("spike_user", JSON.stringify(session));
+
+    await loadAllData();
+    view = session.isAdmin ? "admin" : "feed";
+    const mySections = accessibleSections(session);
+    activeSectionId = mySections.length ? mySections[0].id : null;
+    render();
+  } catch (err) {
+    errEl.textContent = err.message || "Username or password doesn't match.";
+    if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
+  }
+}
+
+function logout() {
+  session = null;
+  authToken = null;
+  entries = [];
+  sectionEntries = [];
+  view = "feed";
+  localStorage.removeItem("spike_token");
+  localStorage.removeItem("spike_user");
+  render();
+}
+
+async function submitEntry(payload) {
+  const errEl = document.getElementById("entryErr");
+  const btn = document.querySelector("#entryForm button");
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "Submitting..."; }
+    await apiFetch("/entries", { method: "POST", body: JSON.stringify(payload) });
+    await loadAllData();
+    view = "feed";
+    render();
+  } catch (err) {
+    if (errEl) errEl.textContent = err.message || "Couldn't submit entry.";
+    if (btn) { btn.disabled = false; btn.textContent = "Submit Entry"; }
+  }
+}
+
+async function submitSectionEntry(sectionId, values) {
+  const errEl = document.getElementById("sectionErr");
+  const btn = document.querySelector("#sectionForm button");
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "Submitting..."; }
+    await apiFetch(`/sections/${sectionId}/entries`, {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    await loadAllData();
+    render();
+  } catch (err) {
+    if (errEl) errEl.textContent = err.message || "Couldn't submit entry.";
+    if (btn) { btn.disabled = false; btn.textContent = "Submit Entry"; }
+  }
+}
+
+// -------------------- Rendering --------------------
+function render() {
+  const app = document.getElementById("app");
+  if (!session) {
+    app.innerHTML = loginHtml();
+    document.getElementById("loginForm").onsubmit = (e) => {
+      e.preventDefault();
+      doLogin(
+        document.getElementById("username").value.trim(),
+        document.getElementById("password").value
+      );
+    };
+    return;
+  }
+  app.innerHTML = mainHtml();
+  wireMainEvents();
+}
+
+function loginHtml() {
+  return `
+    <div style="text-align:center;margin-top:60px;">
+      <img src="${LOGO_DATA_URI}" alt="Spike Creations" style="width:140px;height:auto;border-radius:6px;">
+      <div class="tag" style="margin-top:14px;">Floor Activity Tracker</div>
+    </div>
+    <div class="card">
+      <form id="loginForm">
+        <label>Username</label>
+        <input id="username" placeholder="e.g. cutting1" autocapitalize="none">
+        <label>Password</label>
+        <input id="password" type="password" placeholder="********">
+        <div class="err" id="loginErr"></div>
+        <button class="btn-primary" type="submit">Sign In</button>
+      </form>
+    </div>
+    <div class="footer-note">
+      Demo — admin / admin123<br>Depts: cutting1 / production1 / quality1 etc. — pass123
+    </div>
+  `;
+}
+
+function mainHtml() {
+  const isAdmin = session.isAdmin;
+  const canUseGenericLog = !isAdmin && !NO_GENERIC_LOG_DEPTS.includes(session.department);
+  const mySections = accessibleSections(session);
+  const feedList = filterDept === "all" ? entries : entries.filter(e => e.department === filterDept);
+  const mineList = entries.filter(e => e.department === session.department);
+
+  let tabs = `<div class="tab ${view === "feed" ? "active" : ""}" data-tab="feed">Factory Feed</div>`;
+  if (canUseGenericLog) tabs += `<div class="tab ${view === "mine" ? "active" : ""}" data-tab="mine">My Dept</div>`;
+  if (canUseGenericLog) tabs += `<div class="tab ${view === "new" ? "active" : ""}" data-tab="new">+ New Entry</div>`;
+  if (mySections.length) tabs += `<div class="tab ${view === "sections" ? "active" : ""}" data-tab="sections">Sections</div>`;
+  if (isAdmin) tabs += `<div class="tab ${view === "admin" ? "active" : ""}" data-tab="admin">Dashboard</div>`;
+
+  let body = "";
+  if (view === "new" && canUseGenericLog) body = newEntryFormHtml();
+  else if (view === "feed") body = tickerHtml() + chipsHtml() + feedHtml(feedList, true);
+  else if (view === "mine" && canUseGenericLog) body = feedHtml(mineList, false);
+  else if (view === "sections" && mySections.length) body = sectionsAreaHtml(mySections);
+  else if (view === "admin" && isAdmin) body = dashboardHtml();
+
+  return `
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="${LOGO_DATA_URI}" alt="Spike Creations" style="width:34px;height:34px;border-radius:4px;object-fit:cover;flex-shrink:0;">
+        <div>
+          <h1 style="font-size:18px;">SPIKE CREATIONS</h1>
+          <div style="font-size:11px;color:var(--dim);margin-top:2px;">${escapeHtml(session.fullName)} · ${deptMeta(session.department).label}${isAdmin ? " · All Access" : ""}</div>
+        </div>
+      </div>
+      <button class="btn-secondary" id="logoutBtn">Logout</button>
+    </div>
+    <div class="tabs">${tabs}</div>
+    <div id="bodyArea">${body}</div>
+  `;
+}
+
+function tickerHtml() {
+  const start = todayStartMs();
+  const today = entries.filter(e => e.createdAt >= start).sort((a,b) => b.createdAt - a.createdAt).slice(0, 12);
+  if (!today.length) return "";
+  const items = today.map(e => {
+    const d = deptMeta(e.department);
+    const shortTask = e.task.length > 40 ? e.task.slice(0, 40) + "…" : e.task;
+    return `<span style="margin-right:28px;"><b style="color:var(--amber);">${d.code}</b> ${escapeHtml(e.worker)} logged ${e.quantity} ${e.unit} — ${escapeHtml(shortTask)}</span>`;
+  }).join("");
+  return `<div class="ticker">${items}</div>`;
+}
+
+function chipsHtml() {
+  let html = `<div style="margin:10px 0;"><span class="chip ${filterDept === "all" ? "active" : ""}" data-dept="all">ALL</span>`;
+  DEPARTMENTS.forEach(d => {
+    html += `<span class="chip ${filterDept === d.id ? "active" : ""}" data-dept="${d.id}">${d.code}</span>`;
+  });
+  html += "</div>";
+  return html;
+}
+
+function feedHtml(list, showDept) {
+  if (!list.length) return `<div class="center">No entries yet. Log the day's work using + New Entry.</div>`;
+  const sorted = [...list].sort((a,b) => b.createdAt - a.createdAt);
+  return sorted.map(e => {
+    const d = deptMeta(e.department);
+    const time = new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `
+      <div class="entry">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <div>${showDept ? `<span class="code">${d.code}</span>` : ""}<b>${escapeHtml(e.task)}</b></div>
+          <div style="font-size:11px;color:var(--dim);flex-shrink:0;">${time}</div>
+        </div>
+        <div class="meta">QTY ${e.quantity} ${e.unit} · TIME ${e.timeTakenMinutes} min · WORKER ${escapeHtml(e.worker)}${e.line && e.line !== "-" ? " · LINE " + e.line : ""}${e.styleNumber ? " · STYLE " + escapeHtml(e.styleNumber) : ""}${e.finishingDate ? " · FINISH " + escapeHtml(e.finishingDate) : ""}</div>
+        ${e.remarks ? `<div class="remarks">"${escapeHtml(e.remarks)}"</div>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function newEntryFormHtml() {
+  const d = deptMeta(session.department);
+  const unitOptions = UNITS.map(u => `<option>${u}</option>`).join("");
+  const lineOptions = LINES.map(l => `<option>${l}</option>`).join("");
+  const usesTimeUnitSelector = TIME_UNIT_DEPTS.includes(session.department);
+  const isProduction = session.department === "PRODUCTION";
+
+  const timeField = usesTimeUnitSelector ? `
+        <label>Time taken</label>
+        <div style="display:flex;gap:8px;">
+          <input id="f_time" type="number" min="0" step="0.1" required style="flex:1;">
+          <select id="f_time_unit" style="width:110px;">
+            <option value="mins">mins</option>
+            <option value="hrs">hrs</option>
+            <option value="days">days</option>
+          </select>
+        </div>
+  ` : `
+        <label>Time taken (min)</label>
+        <input id="f_time" type="number" min="0" required>
+  `;
+
+  const finishingDateField = isProduction ? `
+        <label>Finishing Date</label>
+        <input id="f_finishing_date" type="date">
+  ` : "";
+
+  return `
+    <div class="card">
+      <h3><span class="code">${d.code}</span>LOG ${d.label.toUpperCase()} WORK</h3>
+      <form id="entryForm">
+        <label>Task / activity</label>
+        <input id="f_task" required placeholder="e.g. Stitching sleeve attach — Style SC-204">
+        <label>Quantity</label>
+        <input id="f_qty" type="number" min="0" required>
+        <label>Unit</label>
+        <select id="f_unit">${unitOptions}</select>
+        ${timeField}
+        <label>Line</label>
+        <select id="f_line">
+          <option value="-">N/A</option>
+          ${lineOptions}
+        </select>
+        <label>Style / PO number (optional)</label>
+        <input id="f_style" placeholder="e.g. SC-204">
+        ${finishingDateField}
+        <label>Worker / assigned to</label>
+        <input id="f_worker" value="${escapeHtml(session.fullName)}">
+        <label>Remarks (optional)</label>
+        <textarea id="f_remarks" rows="3" placeholder="Any issues, delays, notes..."></textarea>
+        <div class="err" id="entryErr"></div>
+        <button class="btn-primary" type="submit">Submit Entry</button>
+      </form>
+    </div>
+  `;
+}
+
+function sectionFieldInputHtml(field, idPrefix) {
+  const fid = `${idPrefix}_${field.key}`;
+  const req = field.required ? "required" : "";
+  const placeholder = field.placeholder ? `placeholder="${escapeHtml(field.placeholder)}"` : "";
+
+  if (field.type === "select") {
+    const opts = field.options.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+    return `<label>${escapeHtml(field.label)}</label><select id="${fid}">${opts}</select>`;
+  }
+  if (field.type === "textarea") {
+    return `<label>${escapeHtml(field.label)}</label><textarea id="${fid}" rows="3" ${placeholder}></textarea>`;
+  }
+  if (field.type === "date") {
+    return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="date">`;
+  }
+  if (field.type === "number") {
+    return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="number" min="0" ${req}>`;
+  }
+  // default: text
+  return `<label>${escapeHtml(field.label)}</label><input id="${fid}" type="text" ${req} ${placeholder}>`;
+}
+
+function sectionFormHtml(section) {
+  const idPrefix = "sec";
+  const fieldsHtml = section.fields.map(f => sectionFieldInputHtml(f, idPrefix)).join("");
+  return `
+    <div class="card">
+      <h3>${escapeHtml(section.title)}</h3>
+      <form id="sectionForm" data-section-id="${section.id}">
+        ${fieldsHtml}
+        <div class="err" id="sectionErr"></div>
+        <button class="btn-primary" type="submit">Submit Entry</button>
+      </form>
+    </div>
+  `;
+}
+
+function sectionEntryCardHtml(entry, section) {
+  const d = deptMeta(entry.department);
+  const time = new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const rows = section.fields
+    .filter(f => entry.values[f.key] !== undefined && entry.values[f.key] !== "" && entry.values[f.key] !== null)
+    .map(f => `<span style="margin-right:14px;"><span style="color:var(--amber);">${escapeHtml(f.label).toUpperCase()}</span> <span style="color:var(--dim);">${escapeHtml(entry.values[f.key])}</span></span>`)
+    .join("");
+  return `
+    <div class="entry">
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <div><span class="code">${d.code}</span><b>${escapeHtml(section.title)}</b></div>
+        <div style="font-size:11px;color:var(--dim);flex-shrink:0;">${time}</div>
+      </div>
+      <div class="meta">${rows}</div>
+    </div>
+  `;
+}
+
+function sectionsAreaHtml(mySections) {
+  if (!activeSectionId || !mySections.some(s => s.id === activeSectionId)) {
+    activeSectionId = mySections[0].id;
+  }
+  const activeSection = sectionMeta(activeSectionId);
+
+  const chips = mySections.map(s => {
+    const shortTitle = s.title.length > 22 ? s.title.slice(0, 22) + "…" : s.title;
+    return `<span class="chip ${activeSectionId === s.id ? "active" : ""}" data-section="${s.id}" title="${escapeHtml(s.title)}">${escapeHtml(shortTitle)}</span>`;
+  }).join("");
+
+  const sectionList = sectionEntries
+    .filter(e => e.sectionId === activeSectionId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const feedHtmlOut = sectionList.length
+    ? sectionList.map(e => sectionEntryCardHtml(e, activeSection)).join("")
+    : `<div class="center">No entries yet in this section.</div>`;
+
+  const canFill = canFillSection(session, activeSection);
+  const enterersLabel = activeSection.fillDepts.map(id => deptMeta(id).label).join(", ");
+  const formOrNotice = canFill
+    ? sectionFormHtml(activeSection)
+    : `
+      <div class="card" style="text-align:center;color:var(--dim);">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;">View only</div>
+        <div style="font-size:13px;margin-top:6px;">Entries in this section are logged by ${escapeHtml(enterersLabel)}. You can view them below, but can't add new ones here.</div>
+      </div>
+    `;
+
+  return `
+    <div style="margin:10px 0;">${chips}</div>
+    ${formOrNotice}
+    <div style="font-size:16px;letter-spacing:1.5px;color:var(--dim);margin:18px 0 10px;text-transform:uppercase;">${escapeHtml(activeSection.title)} — entries</div>
+    ${feedHtmlOut}
+  `;
+}
+
+function dashboardHtml() {
+  const start = todayStartMs();
+  const todayEntries = entries.filter(e => e.createdAt >= start);
+  const totalMinutes = todayEntries.reduce((s, e) => s + e.timeTakenMinutes, 0);
+
+  const rows = DEPARTMENTS.map(d => {
+    const deptEntries = todayEntries.filter(e => e.department === d.id);
+    const minutes = deptEntries.reduce((s, e) => s + e.timeTakenMinutes, 0);
+    const count = deptEntries.length;
+    return `
+      <div class="dept-row" style="${count === 0 ? "opacity:.45;" : ""}">
+        <span class="code" style="width:36px;">${d.code}</span>
+        <span style="flex:1;font-size:13.5px;">${d.label}</span>
+        <span style="font-size:12px;color:var(--dim);">${count} ${count === 1 ? "entry" : "entries"} · ${minutes}min</span>
+      </div>
+    `;
+  }).join("");
+
+  const activeDepts = DEPARTMENTS.filter(d => todayEntries.some(e => e.department === d.id)).length;
+
+  return `
+    <div class="summary-grid">
+      <div class="summary-card"><div class="big">${todayEntries.length}</div><div class="small">ENTRIES TODAY</div></div>
+      <div class="summary-card"><div class="big">${activeDepts}/${DEPARTMENTS.length}</div><div class="small">ACTIVE DEPTS</div></div>
+      <div class="summary-card"><div class="big">${Math.round(totalMinutes / 60)}h</div><div class="small">WORK LOGGED</div></div>
+    </div>
+    <div style="font-size:16px;letter-spacing:1.5px;color:var(--dim);margin-bottom:10px;text-transform:uppercase;">Department breakdown — today</div>
+    ${rows}
+  `;
+}
+
+function wireMainEvents() {
+  document.getElementById("logoutBtn").onclick = logout;
+
+  document.querySelectorAll(".tab").forEach(t => {
+    t.onclick = () => { view = t.getAttribute("data-tab"); render(); };
+  });
+
+  // Department filter chips (Factory Feed) and Section chips (Sections tab)
+  // both use the .chip class for styling, but need different click behavior —
+  // distinguish them by which data attribute is present.
+  document.querySelectorAll(".chip").forEach(c => {
+    if (c.hasAttribute("data-dept")) {
+      c.onclick = () => { filterDept = c.getAttribute("data-dept"); render(); };
+    } else if (c.hasAttribute("data-section")) {
+      c.onclick = () => { activeSectionId = c.getAttribute("data-section"); render(); };
+    }
+  });
+
+  const form = document.getElementById("entryForm");
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById("entryErr");
+      errEl.textContent = "";
+
+      const task = document.getElementById("f_task").value.trim();
+      const qty = Number(document.getElementById("f_qty").value);
+      const rawTime = Number(document.getElementById("f_time").value);
+      const worker = document.getElementById("f_worker").value.trim();
+
+      // Production logs time in mins/hrs/days; everywhere else stores minutes
+      // directly. Convert here so timeTakenMinutes is always minutes internally
+      // — that keeps the feed, ticker, and admin dashboard totals consistent
+      // no matter which unit was used to enter the value.
+      const timeUnitEl = document.getElementById("f_time_unit");
+      let timeTakenMinutes = isNaN(rawTime) ? 0 : rawTime;
+      if (timeUnitEl) {
+        const unit = timeUnitEl.value;
+        if (unit === "hrs") timeTakenMinutes = rawTime * 60;
+        else if (unit === "days") timeTakenMinutes = rawTime * 60 * 24;
+        // "mins" needs no conversion
+      }
+      timeTakenMinutes = Math.round(timeTakenMinutes);
+
+      if (!task || !qty || isNaN(qty) || !worker) {
+        errEl.textContent = "Please fill in task, quantity, and worker.";
+        return;
+      }
+
+      submitEntry({
+        task,
+        quantity: qty,
+        unit: document.getElementById("f_unit").value,
+        timeTakenMinutes,
+        line: document.getElementById("f_line").value,
+        worker,
+        remarks: document.getElementById("f_remarks").value.trim(),
+        styleNumber: document.getElementById("f_style").value.trim(),
+        finishingDate: document.getElementById("f_finishing_date") ? document.getElementById("f_finishing_date").value : "",
+      });
+    };
+  }
+
+  const sectionForm = document.getElementById("sectionForm");
+  if (sectionForm) {
+    sectionForm.onsubmit = (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById("sectionErr");
+      errEl.textContent = "";
+
+      const sectionId = sectionForm.getAttribute("data-section-id");
+      const section = sectionMeta(sectionId);
+      if (!section) return;
+
+      const values = {};
+      let missingRequired = false;
+      section.fields.forEach(f => {
+        const el = document.getElementById(`sec_${f.key}`);
+        const val = el ? el.value.trim() : "";
+        if (f.required && !val) missingRequired = true;
+        values[f.key] = val;
+      });
+
+      if (missingRequired) {
+        errEl.textContent = "Please fill in all required fields.";
+        return;
+      }
+
+      submitSectionEntry(sectionId, values);
+    };
+  }
+}
+
+async function bootstrap() {
+  const savedToken = localStorage.getItem("spike_token");
+  const savedUser = localStorage.getItem("spike_user");
+  if (savedToken && savedUser) {
+    authToken = savedToken;
+    session = JSON.parse(savedUser);
+    try {
+      await loadAllData();
+      view = session.isAdmin ? "admin" : "feed";
+      const mySections = accessibleSections(session);
+      activeSectionId = mySections.length ? mySections[0].id : null;
+    } catch (err) {
+      // Saved token is stale/expired — fall back to the login screen.
+      authToken = null;
+      session = null;
+      localStorage.removeItem("spike_token");
+      localStorage.removeItem("spike_user");
+    }
+  }
+  render();
+}
+
+bootstrap();
+</script>
+</body>
+</html>

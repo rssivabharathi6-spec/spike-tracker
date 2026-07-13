@@ -866,7 +866,7 @@ app.get("/api/entries/:id/export", requireAuth, async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the file." });
+    res.status(500).json({ error: "Couldn't generate the file: " + (err && err.message ? err.message : String(err)) });
   }
 });
 
@@ -987,7 +987,7 @@ app.get("/api/sections/:id/entries/:entryId/export", requireAuth, async (req, re
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the file." });
+    res.status(500).json({ error: "Couldn't generate the file: " + (err && err.message ? err.message : String(err)) });
   }
 });
 
@@ -1140,7 +1140,7 @@ app.get("/api/export/all", requireAuth, requireAdmin, async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the report." });
+    res.status(500).json({ error: "Couldn't generate the report: " + (err && err.message ? err.message : String(err)) });
   }
 });
 

@@ -6,11 +6,29 @@
 <title>Spike Creations — Floor Activity Tracker</title>
 <style>
   :root{
-    --bg:#1C1B19; --panel:#25231F; --panel2:#2E2B26; --cream:#F2EDE4;
-    --amber:#D98E3F; --brick:#B24A3D; --green:#5C8A5C; --border:#3A362F; --dim:#A69C8C;
+    --bg:#F6F1E7; --panel:#FFFFFF; --panel2:#EFE7D8; --cream:#2B2620;
+    --amber:#C87D2E; --brick:#AF4335; --green:#4C7A4C; --border:#E2D8C4; --dim:#8B8172; --ink:#211D17;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--cream);font-family:Arial,Helvetica,sans-serif;}
+  body.login-mode{
+    background-color:var(--bg);
+    background-image:
+      repeating-linear-gradient(45deg, rgba(200,125,46,0.09) 0, rgba(200,125,46,0.09) 2px, transparent 2px, transparent 13px),
+      repeating-linear-gradient(-45deg, rgba(175,67,53,0.06) 0, rgba(175,67,53,0.06) 2px, transparent 2px, transparent 13px),
+      repeating-linear-gradient(0deg, rgba(43,38,32,0.035) 0, rgba(43,38,32,0.035) 1px, transparent 1px, transparent 26px);
+  }
+  .login-card{position:relative;}
+  .login-card::before{
+    content:"";position:absolute;left:14px;right:14px;top:-1px;height:1px;
+    background-image:repeating-linear-gradient(90deg, var(--amber) 0, var(--amber) 6px, transparent 6px, transparent 12px);
+    opacity:.55;
+  }
+  .weave-strip{
+    height:10px;margin:18px auto 0;max-width:220px;border-radius:2px;
+    background-image:repeating-linear-gradient(45deg, var(--amber) 0, var(--amber) 5px, var(--panel2) 5px, var(--panel2) 10px);
+    opacity:.7;
+  }
   .wrap{max-width:640px;margin:0 auto;padding:16px;}
   h1{font-size:28px;letter-spacing:2px;margin:0;}
   .tag{color:var(--amber);font-size:12px;letter-spacing:2px;text-transform:uppercase;}
@@ -18,7 +36,7 @@
   input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--cream);border-radius:4px;padding:10px;margin-top:4px;}
   label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-top:12px;}
   button{cursor:pointer;border:none;border-radius:4px;padding:12px;font-weight:bold;}
-  .btn-primary{background:var(--amber);color:var(--bg);width:100%;margin-top:16px;text-transform:uppercase;}
+  .btn-primary{background:var(--amber);color:#FFF8EF;width:100%;margin-top:16px;text-transform:uppercase;}
   .btn-secondary{background:transparent;border:1px solid var(--border);color:var(--dim);padding:8px 10px;}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:20px;margin-top:20px;}
   .err{color:var(--brick);margin-top:10px;font-size:13px;}
@@ -30,7 +48,7 @@
   .entry .meta{font-size:12px;color:var(--dim);margin-top:8px;}
   .entry .remarks{margin-top:8px;font-size:12px;color:var(--dim);font-style:italic;border-top:1px dashed var(--border);padding-top:6px;}
   .chip{display:inline-block;border:1px solid var(--amber);color:var(--amber);border-radius:12px;padding:4px 10px;font-size:11px;margin:2px;cursor:pointer;}
-  .chip.active{background:var(--amber);color:var(--bg);}
+  .chip.active{background:var(--amber);color:#FFF8EF;}
   .code{font-family:monospace;font-weight:bold;border:1px solid;border-radius:3px;padding:2px 6px;margin-right:6px;font-size:11px;color:var(--amber);border-color:var(--amber);}
   .center{text-align:center;padding:40px 20px;color:var(--dim);}
   .summary-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;}
@@ -578,6 +596,7 @@ async function submitSectionEntry(sectionId, payload) {
 function render() {
   const app = document.getElementById("app");
   if (!session) {
+    document.body.classList.add("login-mode");
     app.innerHTML = loginHtml();
     document.getElementById("loginForm").onsubmit = (e) => {
       e.preventDefault();
@@ -588,6 +607,7 @@ function render() {
     };
     return;
   }
+  document.body.classList.remove("login-mode");
   app.innerHTML = mainHtml();
   wireMainEvents();
 }
@@ -597,8 +617,9 @@ function loginHtml() {
     <div style="text-align:center;margin-top:60px;">
       <img src="${LOGO_DATA_URI}" alt="Spike Creations" style="width:140px;height:auto;border-radius:6px;">
       <div class="tag" style="margin-top:14px;">Floor Activity Tracker</div>
+      <div class="weave-strip"></div>
     </div>
-    <div class="card">
+    <div class="card login-card">
       <form id="loginForm">
         <label>Username</label>
         <input id="username" placeholder="e.g. cutting1" autocapitalize="none">

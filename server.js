@@ -682,7 +682,7 @@ function docDataTable(headers, rows) {
       children: [new Paragraph({ children: [new TextRun({ text: String(v ?? "") })] })],
     })),
   }));
-  return new Table({ width: { size: TABLE_WIDTH_DXA, type: WidthType.DXA }, columnWidths, rows: [headerRow, ...bodyRows] });
+  return new Table({ width: { size: TABLE_WIDTH_DXA, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...bodyRows] });
 }
 
 function buildGenericEntryDoc(entry) {
@@ -866,7 +866,7 @@ app.get("/api/entries/:id/export", requireAuth, async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the file: " + (err && err.message ? err.message : String(err)) });
+    res.status(500).json({ error: "Couldn't generate the file." });
   }
 });
 
@@ -987,7 +987,7 @@ app.get("/api/sections/:id/entries/:entryId/export", requireAuth, async (req, re
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the file: " + (err && err.message ? err.message : String(err)) });
+    res.status(500).json({ error: "Couldn't generate the file." });
   }
 });
 
@@ -1140,7 +1140,7 @@ app.get("/api/export/all", requireAuth, requireAdmin, async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Couldn't generate the report: " + (err && err.message ? err.message : String(err)) });
+    res.status(500).json({ error: "Couldn't generate the report." });
   }
 });
 

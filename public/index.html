@@ -40,6 +40,15 @@
   .dept-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-bottom:6px;}
   .ticker{background:var(--panel);border-bottom:1px solid var(--border);overflow:hidden;white-space:nowrap;padding:8px 0;font-family:monospace;font-size:12px;color:var(--dim);}
   .footer-note{margin-top:16px;font-size:11px;color:var(--dim);text-align:center;line-height:1.6;}
+  .dl-row{display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
+  .dl-btn{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);border:1px solid var(--border);border-radius:3px;padding:4px 8px;cursor:pointer;background:transparent;}
+  .dl-btn:hover{color:var(--amber);border-color:var(--amber);}
+  .dl-btn:disabled{opacity:.5;cursor:default;}
+  .report-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:16px;margin-bottom:18px;}
+  .report-card h3{margin:0 0 4px;font-size:14px;letter-spacing:1px;text-transform:uppercase;color:var(--amber);}
+  .report-card p{margin:0 0 12px;font-size:12px;color:var(--dim);}
+  .report-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .report-actions .dl-btn{padding:8px 12px;font-size:11.5px;}
 </style>
 </head>
 <body>
@@ -425,6 +434,40 @@ async function apiFetchForm(path, formData) {
   return data;
 }
 
+// Downloads a Word/Excel export. Uses fetch (not a plain <a href>) because
+// the route needs the Authorization: Bearer header, then turns the response
+// into a blob the browser can save.
+async function downloadExport(path, fallbackName, triggerEl) {
+  const originalText = triggerEl ? triggerEl.textContent : null;
+  if (triggerEl) { triggerEl.disabled = true; triggerEl.textContent = "..."; }
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { Authorization: "Bearer " + authToken },
+    });
+    if (!res.ok) {
+      let msg = "Download failed.";
+      try { const data = await res.json(); msg = data.error || msg; } catch (e) { /* no body */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : fallbackName;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    alert(err.message || "Couldn't download the file.");
+  } finally {
+    if (triggerEl) { triggerEl.disabled = false; triggerEl.textContent = originalText; }
+  }
+}
+
 // Loads the feed and every section this user can see. Called right after
 // login (and again after every submit) so the UI always reflects the
 // server's copy of the data.
@@ -565,9 +608,6 @@ function loginHtml() {
         <button class="btn-primary" type="submit">Sign In</button>
       </form>
     </div>
-    <div class="footer-note">
-      Demo — admin / admin123<br>Depts: cutting1 / production1 / quality1 etc. — pass123
-    </div>
   `;
 }
 
@@ -642,6 +682,10 @@ function feedHtml(list, showDept) {
         </div>
         <div class="meta">QTY ${e.quantity} ${e.unit} · TIME ${e.timeTakenMinutes} min · WORKER ${escapeHtml(e.worker)}${e.line && e.line !== "-" ? " · LINE " + e.line : ""}${e.styleNumber ? " · STYLE " + escapeHtml(e.styleNumber) : ""}${e.finishingDate ? " · FINISH " + escapeHtml(e.finishingDate) : ""}</div>
         ${e.remarks ? `<div class="remarks">"${escapeHtml(e.remarks)}"</div>` : ""}
+        <div class="dl-row">
+          <button type="button" class="dl-btn" data-dl-entry="${e.id}" data-dl-fmt="docx">⬇ Word</button>
+          <button type="button" class="dl-btn" data-dl-entry="${e.id}" data-dl-fmt="xlsx">⬇ Excel</button>
+        </div>
       </div>
     `;
   }).join("");
@@ -768,6 +812,10 @@ function sectionEntryCardHtml(entry, section) {
         <div style="font-size:11px;color:var(--dim);flex-shrink:0;">${time}</div>
       </div>
       <div class="meta">${rows}</div>
+      <div class="dl-row">
+        <button type="button" class="dl-btn" data-dl-section-entry="${entry.id}" data-dl-section-id="${section.id}" data-dl-fmt="docx">⬇ Word</button>
+        <button type="button" class="dl-btn" data-dl-section-entry="${entry.id}" data-dl-section-id="${section.id}" data-dl-fmt="xlsx">⬇ Excel</button>
+      </div>
     </div>
   `;
 }
@@ -836,6 +884,14 @@ function dashboardHtml() {
       <div class="summary-card"><div class="big">${activeDepts}/${DEPARTMENTS.length}</div><div class="small">ACTIVE DEPTS</div></div>
       <div class="summary-card"><div class="big">${Math.round(totalMinutes / 60)}h</div><div class="small">WORK LOGGED</div></div>
     </div>
+    <div class="report-card">
+      <h3>Full Company Report</h3>
+      <p>Every department, every section, in one file.</p>
+      <div class="report-actions">
+        <button type="button" class="dl-btn" data-dl-report="1" data-dl-fmt="docx">⬇ Word (.docx)</button>
+        <button type="button" class="dl-btn" data-dl-report="1" data-dl-fmt="xlsx">⬇ Excel (.xlsx)</button>
+      </div>
+    </div>
     <div style="font-size:16px;letter-spacing:1.5px;color:var(--dim);margin-bottom:10px;text-transform:uppercase;">Department breakdown — today</div>
     ${rows}
   `;
@@ -857,6 +913,33 @@ function wireMainEvents() {
     } else if (c.hasAttribute("data-section")) {
       c.onclick = () => { activeSectionId = c.getAttribute("data-section"); render(); };
     }
+  });
+
+  // Single Factory Feed entry -> Word / Excel
+  document.querySelectorAll("[data-dl-entry]").forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute("data-dl-entry");
+      const fmt = btn.getAttribute("data-dl-fmt");
+      downloadExport(`/entries/${id}/export?format=${fmt}`, `Entry_${id}.${fmt}`, btn);
+    };
+  });
+
+  // Single Section entry -> Word / Excel
+  document.querySelectorAll("[data-dl-section-entry]").forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute("data-dl-section-entry");
+      const sectionId = btn.getAttribute("data-dl-section-id");
+      const fmt = btn.getAttribute("data-dl-fmt");
+      downloadExport(`/sections/${sectionId}/entries/${id}/export?format=${fmt}`, `Entry_${id}.${fmt}`, btn);
+    };
+  });
+
+  // Full company report (admin/MD dashboard) -> Word / Excel, every dept & section
+  document.querySelectorAll("[data-dl-report]").forEach(btn => {
+    btn.onclick = () => {
+      const fmt = btn.getAttribute("data-dl-fmt");
+      downloadExport(`/export/all?format=${fmt}`, `Spike_Creations_Full_Report.${fmt}`, btn);
+    };
   });
 
   const form = document.getElementById("entryForm");

@@ -554,6 +554,43 @@ function logout() {
   render();
 }
 
+// Shows "Signing in as: <name> — <dept>" under the username field as soon
+// as a recognized username is typed, before the password is even entered.
+// Debounced so it doesn't fire an API call on every keystroke, and guards
+// against out-of-order responses if the field changes again mid-request.
+let whoisRequestId = 0;
+function wireWhoisPreview() {
+  const usernameEl = document.getElementById("username");
+  const previewEl = document.getElementById("whoisPreview");
+  if (!usernameEl || !previewEl) return;
+
+  let debounceTimer = null;
+  usernameEl.addEventListener("input", () => {
+    const value = usernameEl.value.trim();
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (!value) { previewEl.textContent = ""; return; }
+    debounceTimer = setTimeout(() => runWhoisLookup(value, previewEl), 350);
+  });
+}
+
+async function runWhoisLookup(username, previewEl) {
+  const requestId = ++whoisRequestId;
+  try {
+    const res = await fetch(`${API_BASE}/auth/whois?username=${encodeURIComponent(username)}`);
+    const data = await res.json();
+    if (requestId !== whoisRequestId) return; // a newer keystroke has since fired
+    if (data && data.found) {
+      previewEl.textContent = `Signing in as: ${data.fullName} — ${data.department}`;
+      previewEl.style.color = "var(--amber)";
+    } else {
+      previewEl.textContent = "";
+    }
+  } catch (err) {
+    if (requestId !== whoisRequestId) return;
+    previewEl.textContent = "";
+  }
+}
+
 // `payload` is either a plain object (JSON path, no attachment) or a
 // FormData instance (multipart path, used when an attachment was chosen).
 async function submitEntry(payload) {
@@ -611,6 +648,7 @@ function render() {
         document.getElementById("password").value
       );
     };
+    wireWhoisPreview();
     return;
   }
   document.body.classList.remove("login-mode");
@@ -629,6 +667,7 @@ function loginHtml() {
       <form id="loginForm">
         <label>Username</label>
         <input id="username" placeholder="e.g. cutting1" autocapitalize="none">
+        <div id="whoisPreview" style="font-size:12px;color:var(--dim);margin-top:6px;min-height:16px;"></div>
         <label>Password</label>
         <input id="password" type="password" placeholder="********">
         <div class="err" id="loginErr"></div>

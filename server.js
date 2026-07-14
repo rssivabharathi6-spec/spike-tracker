@@ -819,6 +819,23 @@ app.post("/api/auth/login", (req, res) => {
   res.json({ token, user: publicUser });
 });
 
+// No auth required (there's no session yet) — lets the sign-in screen show
+// "Signing in as: <name>" as soon as a recognized username is typed, before
+// the password is even entered. Deliberately returns only a display name +
+// department, never anything password-related, and a bare `{ found: false }`
+// (not a 404/error) for unknown usernames so the login form can treat it as
+// a normal "nothing to preview yet" case.
+app.get("/api/auth/whois", (req, res) => {
+  const username = String(req.query.username || "").trim();
+  if (!username) return res.json({ found: false });
+
+  const { users } = dbLoad();
+  const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  if (!user) return res.json({ found: false });
+
+  res.json({ found: true, fullName: user.fullName, department: deptLabelOf(user.department) });
+});
+
 app.get("/api/auth/me", requireAuth, (req, res) => {
   const sections = accessibleSections(req.user).map(s => s.id);
   res.json({ user: req.user, accessibleSectionIds: sections });

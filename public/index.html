@@ -554,12 +554,18 @@ function logout() {
   render();
 }
 
+// `payload` is either a plain object (JSON path, no attachment) or a
+// FormData instance (multipart path, used when an attachment was chosen).
 async function submitEntry(payload) {
   const errEl = document.getElementById("entryErr");
   const btn = document.querySelector("#entryForm button");
   try {
     if (btn) { btn.disabled = true; btn.textContent = "Submitting..."; }
-    await apiFetch("/entries", { method: "POST", body: JSON.stringify(payload) });
+    if (payload instanceof FormData) {
+      await apiFetchForm("/entries", payload);
+    } else {
+      await apiFetch("/entries", { method: "POST", body: JSON.stringify(payload) });
+    }
     await loadAllData();
     view = "feed";
     render();
@@ -647,7 +653,7 @@ function mainHtml() {
 
   let body = "";
   if (view === "new" && canUseGenericLog) body = newEntryFormHtml();
-  else if (view === "feed") body = tickerHtml() + chipsHtml() + feedHtml(feedList, true);
+  else if (view === "feed") body = tickerHtml() + chipsHtml() + feedHtml(feedList, true, filterDept === "all" ? session.department : null);
   else if (view === "mine" && canUseGenericLog) body = feedHtml(mineList, false);
   else if (view === "sections" && mySections.length) body = sectionsAreaHtml(mySections);
   else if (view === "admin" && isAdmin) body = dashboardHtml();
@@ -658,7 +664,8 @@ function mainHtml() {
         <img src="${LOGO_DATA_URI}" alt="Spike Creations" style="width:34px;height:34px;border-radius:4px;object-fit:cover;flex-shrink:0;">
         <div>
           <h1 style="font-size:18px;">SPIKE CREATIONS</h1>
-          <div style="font-size:11px;color:var(--dim);margin-top:2px;">${escapeHtml(session.fullName)} · ${deptMeta(session.department).label}${isAdmin ? " · All Access" : ""}</div>
+          <div style="font-size:15px;font-weight:bold;color:var(--ink);margin-top:3px;">${escapeHtml(session.fullName)}</div>
+          <div style="font-size:11px;color:var(--dim);margin-top:1px;">${deptMeta(session.department).label}${isAdmin ? " · All Access" : ""}</div>
         </div>
       </div>
       <button class="btn-secondary" id="logoutBtn">Logout</button>
@@ -680,18 +687,39 @@ function tickerHtml() {
   return `<div class="ticker">${items}</div>`;
 }
 
+// Puts the logged-in user's own department first, wherever departments are
+// listed for that user (filter chips, feed ordering) — everyone else stays
+// in the normal factory-floor order.
+function orderedDepartments() {
+  if (!session) return DEPARTMENTS;
+  const mineIdx = DEPARTMENTS.findIndex(d => d.id === session.department);
+  if (mineIdx <= 0) return DEPARTMENTS;
+  const mine = DEPARTMENTS[mineIdx];
+  return [mine, ...DEPARTMENTS.filter(d => d.id !== session.department)];
+}
+
 function chipsHtml() {
   let html = `<div style="margin:10px 0;"><span class="chip ${filterDept === "all" ? "active" : ""}" data-dept="all">ALL</span>`;
-  DEPARTMENTS.forEach(d => {
+  orderedDepartments().forEach(d => {
     html += `<span class="chip ${filterDept === d.id ? "active" : ""}" data-dept="${d.id}">${d.code}</span>`;
   });
   html += "</div>";
   return html;
 }
 
-function feedHtml(list, showDept) {
+// `prioritizeDept`, when given, floats that department's entries to the top
+// of the list (each group still newest-first) — used on the "all
+// departments" Factory Feed view so a user's own department shows first.
+function feedHtml(list, showDept, prioritizeDept) {
   if (!list.length) return `<div class="center">No entries yet. Log the day's work using + New Entry.</div>`;
-  const sorted = [...list].sort((a,b) => b.createdAt - a.createdAt);
+  let sorted;
+  if (prioritizeDept) {
+    const mine = list.filter(e => e.department === prioritizeDept).sort((a, b) => b.createdAt - a.createdAt);
+    const rest = list.filter(e => e.department !== prioritizeDept).sort((a, b) => b.createdAt - a.createdAt);
+    sorted = [...mine, ...rest];
+  } else {
+    sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
+  }
   return sorted.map(e => {
     const d = deptMeta(e.department);
     const time = new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -703,6 +731,7 @@ function feedHtml(list, showDept) {
         </div>
         <div class="meta">QTY ${e.quantity} ${e.unit} · TIME ${e.timeTakenMinutes} min · WORKER ${escapeHtml(e.worker)}${e.line && e.line !== "-" ? " · LINE " + e.line : ""}${e.styleNumber ? " · STYLE " + escapeHtml(e.styleNumber) : ""}${e.finishingDate ? " · FINISH " + escapeHtml(e.finishingDate) : ""}</div>
         ${e.remarks ? `<div class="remarks">"${escapeHtml(e.remarks)}"</div>` : ""}
+        ${e.attachment && e.attachment.url ? `<div class="meta" style="margin-top:6px;"><a href="${escapeHtml(e.attachment.url)}" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:underline;">📎 ${escapeHtml(e.attachment.originalName || "attachment")}</a></div>` : ""}
         <div class="dl-row">
           <button type="button" class="dl-btn" data-dl-entry="${e.id}" data-dl-fmt="docx">⬇ Word</button>
           <button type="button" class="dl-btn" data-dl-entry="${e.id}" data-dl-fmt="xlsx">⬇ Excel</button>
@@ -762,6 +791,8 @@ function newEntryFormHtml() {
         <input id="f_worker" value="${escapeHtml(session.fullName)}">
         <label>Remarks (optional)</label>
         <textarea id="f_remarks" rows="3" placeholder="Any issues, delays, notes..."></textarea>
+        <label>Attachment (optional — image or PDF)</label>
+        <input id="f_attachment" type="file" accept="image/*,.pdf">
         <div class="err" id="entryErr"></div>
         <button class="btn-primary" type="submit">Submit Entry</button>
       </form>
@@ -797,11 +828,20 @@ function sectionFieldInputHtml(field, idPrefix) {
 function sectionFormHtml(section) {
   const idPrefix = "sec";
   const fieldsHtml = section.fields.map(f => sectionFieldInputHtml(f, idPrefix)).join("");
+  // Sections that already declare their own typed "file" field (e.g. T&A
+  // Schedule) keep just that one upload control; everyone else gets this
+  // universal optional attachment instead, so there's always exactly one.
+  const hasFileField = section.fields.some(f => f.type === "file");
+  const universalAttachmentHtml = hasFileField ? "" : `
+        <label>Attachment (optional — image or PDF)</label>
+        <input id="sec_universalAttachment" type="file" accept="image/*,.pdf">
+  `;
   return `
     <div class="card">
       <h3>${escapeHtml(section.title)}</h3>
       <form id="sectionForm" data-section-id="${section.id}">
         ${fieldsHtml}
+        ${universalAttachmentHtml}
         <div class="err" id="sectionErr"></div>
         <button class="btn-primary" type="submit">Submit Entry</button>
       </form>
@@ -833,6 +873,7 @@ function sectionEntryCardHtml(entry, section) {
         <div style="font-size:11px;color:var(--dim);flex-shrink:0;">${time}</div>
       </div>
       <div class="meta">${rows}</div>
+      ${entry.attachment && entry.attachment.url ? `<div class="meta" style="margin-top:6px;"><a href="${escapeHtml(entry.attachment.url)}" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:underline;">📎 ${escapeHtml(entry.attachment.originalName || "attachment")}</a></div>` : ""}
       <div class="dl-row">
         <button type="button" class="dl-btn" data-dl-section-entry="${entry.id}" data-dl-section-id="${section.id}" data-dl-fmt="docx">⬇ Word</button>
         <button type="button" class="dl-btn" data-dl-section-entry="${entry.id}" data-dl-section-id="${section.id}" data-dl-fmt="xlsx">⬇ Excel</button>
@@ -994,7 +1035,7 @@ function wireMainEvents() {
         return;
       }
 
-      submitEntry({
+      const fields = {
         task,
         quantity: qty,
         unit: document.getElementById("f_unit").value,
@@ -1004,7 +1045,18 @@ function wireMainEvents() {
         remarks: document.getElementById("f_remarks").value.trim(),
         styleNumber: document.getElementById("f_style").value.trim(),
         finishingDate: document.getElementById("f_finishing_date") ? document.getElementById("f_finishing_date").value : "",
-      });
+      };
+
+      const attachmentEl = document.getElementById("f_attachment");
+      const attachmentFile = attachmentEl && attachmentEl.files && attachmentEl.files[0];
+      if (attachmentFile) {
+        const formData = new FormData();
+        Object.keys(fields).forEach(k => formData.append(k, fields[k]));
+        formData.append("attachment", attachmentFile);
+        submitEntry(formData);
+      } else {
+        submitEntry(fields);
+      }
     };
   }
 
@@ -1020,11 +1072,15 @@ function wireMainEvents() {
       if (!section) return;
 
       const hasFileField = section.fields.some(f => f.type === "file");
+      const universalAttachmentEl = document.getElementById("sec_universalAttachment");
+      const universalAttachmentFile = (!hasFileField && universalAttachmentEl && universalAttachmentEl.files && universalAttachmentEl.files[0]) || null;
       let missingRequired = false;
 
-      if (hasFileField) {
-        // Multipart submission: the file itself goes in under its field key,
-        // everything else travels as a JSON string in "valuesJson" (see
+      if (hasFileField || universalAttachmentFile) {
+        // Multipart submission: any typed file field goes in under its own
+        // field key, the universal optional attachment (if this section
+        // doesn't have a typed file field) goes in as "sectionAttachment",
+        // and everything else travels as a JSON string in "valuesJson" (see
         // POST /api/sections/:id/entries).
         const formData = new FormData();
         const otherValues = {};
@@ -1045,6 +1101,7 @@ function wireMainEvents() {
           return;
         }
         formData.append("valuesJson", JSON.stringify(otherValues));
+        if (universalAttachmentFile) formData.append("sectionAttachment", universalAttachmentFile);
         submitSectionEntry(sectionId, formData);
       } else {
         const values = {};

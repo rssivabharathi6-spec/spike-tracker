@@ -552,6 +552,7 @@ const GENERIC_COLUMNS = [
   { header: "Finishing Date", key: "finishingDate", width: 16 },
   { header: "Worker", key: "worker", width: 18 },
   { header: "Remarks", key: "remarks", width: 30 },
+  { header: "Attachment", key: "attachment", width: 22 },
   { header: "Entered By", key: "createdBy", width: 14 },
   { header: "Logged At", key: "createdAtLabel", width: 20 },
 ];
@@ -568,6 +569,7 @@ function genericEntryRow(e) {
     finishingDate: e.finishingDate || "",
     worker: e.worker,
     remarks: e.remarks || "",
+    attachment: e.attachment && e.attachment.originalName ? e.attachment.originalName : "",
     createdBy: e.createdBy,
     createdAtLabel: fmtDateTime(e.createdAt),
   };
@@ -596,10 +598,15 @@ function sectionValueLabel(field, entry) {
 }
 
 function addSectionSheet(workbook, section, entries) {
+  // Sections that already declare their own typed "file" field show it via
+  // that field's column below; everyone else gets the universal optional
+  // "Attachment" column instead (see the /sections/:id/entries route).
+  const hasOwnFileField = section.fields.some(f => f.type === "file");
   const ws = workbook.addWorksheet(safeSheetName(section.title));
   const columns = [
     { header: "Dept", key: "department", width: 14 },
     ...section.fields.map(f => ({ header: f.label, key: f.key, width: 22 })),
+    ...(hasOwnFileField ? [] : [{ header: "Attachment", key: "attachment", width: 22 }]),
     { header: "Entered By", key: "createdBy", width: 14 },
     { header: "Logged At", key: "createdAtLabel", width: 20 },
   ];
@@ -608,6 +615,7 @@ function addSectionSheet(workbook, section, entries) {
   entries.forEach(e => {
     const row = { department: deptLabelOf(e.department), createdBy: e.createdBy, createdAtLabel: fmtDateTime(e.createdAt) };
     section.fields.forEach(f => { row[f.key] = sectionValueLabel(f, e); });
+    if (!hasOwnFileField) row.attachment = e.attachment && e.attachment.originalName ? e.attachment.originalName : "";
     ws.addRow(row);
   });
   ws.autoFilter = { from: "A1", to: `${String.fromCharCode(64 + columns.length)}1` };
@@ -703,6 +711,7 @@ function buildGenericEntryDoc(entry) {
           ["Finishing Date", entry.finishingDate || "N/A"],
           ["Worker / Assigned To", entry.worker],
           ["Remarks", entry.remarks || "—"],
+          ["Attachment", entry.attachment && entry.attachment.originalName ? entry.attachment.originalName : "None"],
           ["Entered By", entry.createdBy],
           ["Logged At", fmtDateTime(entry.createdAt)],
         ]),
@@ -714,6 +723,9 @@ function buildGenericEntryDoc(entry) {
 function buildSectionEntryDoc(entry, section) {
   const pairs = [["Department", deptLabelOf(entry.department)]];
   section.fields.forEach(f => pairs.push([f.label, sectionValueLabel(f, entry) || "—"]));
+  if (!section.fields.some(f => f.type === "file")) {
+    pairs.push(["Attachment", entry.attachment && entry.attachment.originalName ? entry.attachment.originalName : "None"]);
+  }
   pairs.push(["Entered By", entry.createdBy], ["Logged At", fmtDateTime(entry.createdAt)]);
   return new Document({
     sections: [{
@@ -737,10 +749,12 @@ function buildFullReportDoc({ entries, sectionEntries }) {
   children.push(docHeading("Factory Feed — All Departments"));
   if (entries.length) {
     children.push(docDataTable(
-      ["Dept", "Task", "Qty", "Unit", "Time", "Worker", "Style", "Remarks", "Logged At"],
+      ["Dept", "Task", "Qty", "Unit", "Time", "Worker", "Style", "Remarks", "Attachment", "Logged At"],
       entries.map(e => [
         deptLabelOf(e.department), e.task, e.quantity, e.unit, fmtMinutes(e.timeTakenMinutes),
-        e.worker, e.styleNumber || "", e.remarks || "", fmtDateTime(e.createdAt),
+        e.worker, e.styleNumber || "", e.remarks || "",
+        e.attachment && e.attachment.originalName ? e.attachment.originalName : "",
+        fmtDateTime(e.createdAt),
       ])
     ));
   } else {
@@ -751,10 +765,12 @@ function buildFullReportDoc({ entries, sectionEntries }) {
     const rows = sectionEntries.filter(e => e.sectionId === section.id);
     if (!rows.length) return;
     children.push(docHeading(section.title));
-    const headers = ["Dept", ...section.fields.map(f => f.label), "Logged At"];
+    const hasOwnFileField = section.fields.some(f => f.type === "file");
+    const headers = ["Dept", ...section.fields.map(f => f.label), ...(hasOwnFileField ? [] : ["Attachment"]), "Logged At"];
     const tableRows = rows.map(e => [
       deptLabelOf(e.department),
       ...section.fields.map(f => sectionValueLabel(f, e)),
+      ...(hasOwnFileField ? [] : [e.attachment && e.attachment.originalName ? e.attachment.originalName : ""]),
       fmtDateTime(e.createdAt),
     ]);
     children.push(docDataTable(headers, tableRows));
@@ -870,7 +886,10 @@ app.get("/api/entries/:id/export", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/entries", requireAuth, (req, res) => {
+// upload.any() is a no-op for plain JSON submissions (it only kicks in for
+// multipart/form-data), so this route keeps working for JSON clients while
+// also accepting an optional "attachment" file (image or PDF) from the form.
+app.post("/api/entries", requireAuth, upload.any(), (req, res) => {
   const state = dbLoad();
   const body = req.body || {};
 
@@ -909,6 +928,16 @@ app.post("/api/entries", requireAuth, (req, res) => {
   }
   timeTakenMinutes = Math.round(timeTakenMinutes) || 0;
 
+  // Optional attachment (image or PDF) — same upload pipeline/validation as
+  // Section file fields, just stored at the top level of a generic entry.
+  const uploadedAttachment = (req.files || []).find(f => f.fieldname === "attachment");
+  const attachment = uploadedAttachment ? {
+    originalName: uploadedAttachment.originalname,
+    url: `/uploads/${uploadedAttachment.filename}`,
+    mimeType: uploadedAttachment.mimetype,
+    size: uploadedAttachment.size,
+  } : null;
+
   const entry = {
     id: state.seq.entries++,
     department,
@@ -921,6 +950,7 @@ app.post("/api/entries", requireAuth, (req, res) => {
     remarks: String(body.remarks || "").trim(),
     styleNumber: String(body.styleNumber || "").trim(),
     finishingDate: body.finishingDate || "",
+    attachment,
     createdBy: req.user.username,
     createdAt: Date.now(),
   };
@@ -1043,6 +1073,24 @@ app.post("/api/sections/:id/entries", requireAuth, upload.any(), (req, res) => {
     return res.status(400).json({ error: "Please fill in all required fields." });
   }
 
+  // Universal optional attachment (image or PDF) for every section — except
+  // ones that already declare their own typed "file" field (e.g. T&A
+  // Schedule), which keeps using that field instead so there's only ever
+  // one upload control per form. Sent under the fixed field name
+  // "sectionAttachment" so it never collides with a section's own file key.
+  let attachment = null;
+  if (!section.fields.some(f => f.type === "file")) {
+    const uploaded = (req.files || []).find(file => file.fieldname === "sectionAttachment");
+    if (uploaded) {
+      attachment = {
+        originalName: uploaded.originalname,
+        url: `/uploads/${uploaded.filename}`,
+        mimeType: uploaded.mimetype,
+        size: uploaded.size,
+      };
+    }
+  }
+
   const state = dbLoad();
   const entry = {
     id: state.seq.sectionEntries++,
@@ -1051,6 +1099,7 @@ app.post("/api/sections/:id/entries", requireAuth, upload.any(), (req, res) => {
     createdBy: req.user.username,
     createdAt: Date.now(),
     values,
+    attachment,
   };
   state.sectionEntries.push(entry);
   dbPersist().then(() => res.status(201).json({ entry }));

@@ -63,7 +63,10 @@ const USERS_SEED = [
   { username: "cutting1",    password: "pass123",  fullName: "S. Devi",      department: "CUTTING",       isAdmin: false },
   { username: "quality1",    password: "pass123",  fullName: "M. Iqbal",     department: "QUALITY",       isAdmin: false },
   { username: "planning1",   password: "pass123",  fullName: "A. Nair",      department: "PLANNING",      isAdmin: false },
-  { username: "merch1",      password: "pass123",  fullName: "P. Shah",      department: "MERCHANDISE",   isAdmin: false },
+  { username: "merch1",      password: "pass123",  fullName: "Shabeer",      department: "MERCHANDISE",   isAdmin: false },
+  { username: "merch2",      password: "pass123",  fullName: "Naveen",       department: "MERCHANDISE",   isAdmin: false },
+  { username: "merch3",      password: "pass123",  fullName: "Suresh",       department: "MERCHANDISE",   isAdmin: false },
+  { username: "merch4",      password: "pass123",  fullName: "Gayatri",      department: "MERCHANDISE",   isAdmin: false },
   { username: "hr1",         password: "pass123",  fullName: "K. Reddy",     department: "HR",            isAdmin: false },
   { username: "accounts1",   password: "pass123",  fullName: "V. Rao",       department: "ACCOUNTS",      isAdmin: false },
   { username: "docs1",       password: "pass123",  fullName: "T. Singh",     department: "DOCUMENTATION", isAdmin: false },
@@ -383,6 +386,40 @@ function buildFreshDB() {
 let dbCache = null;
 let writeChain = Promise.resolve();
 
+// Keeps dbCache.users in sync with USERS_SEED on every startup, so editing
+// the seed list (adding a new login, renaming someone, changing a
+// password) takes effect on an already-existing data file without
+// touching entries/sectionEntries. Existing users are matched by
+// username: fullName/department/isAdmin are refreshed from the seed, and
+// the password is only re-hashed if it actually changed. New usernames in
+// the seed are appended; usernames removed from the seed are left alone
+// (never auto-deleted, so nobody is locked out by accident).
+function syncUsersFromSeed(db) {
+  let changed = false;
+  for (const seed of USERS_SEED) {
+    const existing = db.users.find(u => u.username === seed.username);
+    if (!existing) {
+      db.users.push({
+        username: seed.username,
+        passwordHash: bcrypt.hashSync(seed.password, 10),
+        fullName: seed.fullName,
+        department: seed.department,
+        isAdmin: seed.isAdmin,
+      });
+      changed = true;
+      continue;
+    }
+    if (existing.fullName !== seed.fullName) { existing.fullName = seed.fullName; changed = true; }
+    if (existing.department !== seed.department) { existing.department = seed.department; changed = true; }
+    if (!!existing.isAdmin !== !!seed.isAdmin) { existing.isAdmin = seed.isAdmin; changed = true; }
+    if (!bcrypt.compareSync(seed.password, existing.passwordHash)) {
+      existing.passwordHash = bcrypt.hashSync(seed.password, 10);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function dbLoad() {
   if (dbCache) return dbCache;
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -391,6 +428,7 @@ function dbLoad() {
     dbPersist();
   } else {
     dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    if (syncUsersFromSeed(dbCache)) dbPersist();
   }
   return dbCache;
 }

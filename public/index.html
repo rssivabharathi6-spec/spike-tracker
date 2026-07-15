@@ -591,6 +591,7 @@ let session = null;         // { username, fullName, department, isAdmin }
 let authToken = null;
 let entries = [];
 let sectionEntries = [];
+let sectionOtherEntries = []; // entries OTHER depts filed into sections we own (fillDepts) — kept separate from our own list
 let filterDept = "all";
 let view = "feed";
 let activeSectionId = null; // set on login / when Sections tab is opened
@@ -680,6 +681,17 @@ async function loadAllData() {
     )
   );
   sectionEntries = sectionResults.flat();
+
+  // For sections we own (fillDepts includes our department), also pull the
+  // entries other departments filed in there (e.g. Planning's override), so
+  // they can be shown separately instead of disappearing entirely.
+  const ownedSections = mySections.filter(s => canFillSection(session, s));
+  const otherResults = await Promise.all(
+    ownedSections.map(s =>
+      apiFetch(`/sections/${s.id}/entries?scope=other`).then(r => r.entries.map(e => ({ ...e, sectionId: s.id })))
+    )
+  );
+  sectionOtherEntries = otherResults.flat();
 }
 
 
@@ -728,6 +740,7 @@ function logout() {
   authToken = null;
   entries = [];
   sectionEntries = [];
+  sectionOtherEntries = [];
   view = "feed";
   localStorage.removeItem("spike_token");
   localStorage.removeItem("spike_user");
@@ -1131,11 +1144,33 @@ function sectionsAreaHtml(mySections) {
       </div>
     `;
 
+  // If we own this section, show a second, clearly separate block underneath
+  // for entries OTHER departments filed in here (e.g. Planning using its
+  // all-section override) — named after the section, so it reads as
+  // "this section, but the other-department entries" rather than being
+  // silently dropped.
+  const otherList = canFill
+    ? sectionOtherEntries
+        .filter(e => e.sectionId === activeSectionId)
+        .sort((a, b) => b.createdAt - a.createdAt)
+    : [];
+  const otherBlockHtml = canFill
+    ? `
+      <div style="font-size:16px;letter-spacing:1.5px;color:var(--dim);margin:26px 0 10px;text-transform:uppercase;">${escapeHtml(activeSection.title)} — Other Departments</div>
+      ${
+        otherList.length
+          ? otherList.map(e => sectionEntryCardHtml(e, activeSection)).join("")
+          : `<div class="center">No entries from other departments here.</div>`
+      }
+    `
+    : "";
+
   return `
     <div style="margin:10px 0;">${chips}</div>
     ${formOrNotice}
     <div style="font-size:16px;letter-spacing:1.5px;color:var(--dim);margin:18px 0 10px;text-transform:uppercase;">${escapeHtml(activeSection.title)} — entries</div>
     ${feedHtmlOut}
+    ${otherBlockHtml}
   `;
 }
 

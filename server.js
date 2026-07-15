@@ -1219,14 +1219,20 @@ app.get("/api/sections/:id/entries", requireAuth, (req, res) => {
 
   const { sectionEntries } = dbLoad();
   let rows = sectionEntries.filter(e => e.sectionId === section.id);
+  const isHomeDept = section.fillDepts.includes(req.user.department);
 
-  // A section's "home" department (the one in fillDepts) only sees entries
-  // it filed itself here. Planning can fill any section as an override, so
-  // without this an entry Planning drops into e.g. Fabric's own section
-  // would show up mixed in as if Fabric had entered it. Everyone else with
-  // view access (Planning, MD, Admin, Merchandise) still sees every entry,
-  // since their role is cross-department oversight.
-  if (section.fillDepts.includes(req.user.department)) {
+  if (req.query.scope === "other") {
+    // Entries OTHER departments filed into this section (e.g. Planning using
+    // its all-section override). Only meaningful for the section's home
+    // department — everyone else already sees everything in the default view.
+    rows = rows.filter(e => e.department !== req.user.department);
+  } else if (isHomeDept) {
+    // A section's "home" department (the one in fillDepts) only sees entries
+    // it filed itself here by default. Planning can fill any section as an
+    // override, so without this an entry Planning drops into e.g. Fabric's
+    // own section would show up mixed in as if Fabric had entered it.
+    // Everyone else with view access (Planning, MD, Admin, Merchandise)
+    // still sees every entry, since their role is cross-department oversight.
     rows = rows.filter(e => e.department === req.user.department);
   }
 

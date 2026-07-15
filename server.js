@@ -1218,23 +1218,13 @@ app.get("/api/sections/:id/entries", requireAuth, (req, res) => {
   }
 
   const { sectionEntries } = dbLoad();
-  let rows = sectionEntries.filter(e => e.sectionId === section.id);
-  const isHomeDept = section.fillDepts.includes(req.user.department);
-
-  if (req.query.scope === "other") {
-    // Entries OTHER departments filed into this section (e.g. Planning using
-    // its all-section override). Only meaningful for the section's home
-    // department — everyone else already sees everything in the default view.
-    rows = rows.filter(e => e.department !== req.user.department);
-  } else if (isHomeDept) {
-    // A section's "home" department (the one in fillDepts) only sees entries
-    // it filed itself here by default. Planning can fill any section as an
-    // override, so without this an entry Planning drops into e.g. Fabric's
-    // own section would show up mixed in as if Fabric had entered it.
-    // Everyone else with view access (Planning, MD, Admin, Merchandise)
-    // still sees every entry, since their role is cross-department oversight.
-    rows = rows.filter(e => e.department === req.user.department);
-  }
+  // Every department only sees OTHER departments' entries in a section —
+  // entries their own department filed here aren't repeated back to them.
+  // Applies uniformly to every department with view access, not just the
+  // section's fillDepts "home" department.
+  let rows = sectionEntries
+    .filter(e => e.sectionId === section.id)
+    .filter(e => e.department !== req.user.department);
 
   rows = rows.sort((a, b) => b.createdAt - a.createdAt);
   res.json({ entries: rows });
@@ -1256,7 +1246,9 @@ app.get("/api/sections/:id/entries/:entryId/export", requireAuth, async (req, re
   const { sectionEntries } = dbLoad();
   const entry = sectionEntries.find(e => e.id === Number(req.params.entryId) && e.sectionId === section.id);
   if (!entry) return res.status(404).json({ error: "Entry not found." });
-  if (section.fillDepts.includes(req.user.department) && entry.department !== req.user.department) {
+  // Matches the section view rule: a department can't view/export its own
+  // entries back to itself here, only other departments' entries.
+  if (entry.department === req.user.department) {
     return res.status(403).json({ error: "You don't have access to this entry." });
   }
 
